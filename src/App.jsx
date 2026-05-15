@@ -33,23 +33,23 @@ async function fetchAllSavedTracks(token) {
   return tracks;
 }
 
-async function fetchAllPlaylistTracks(token) {
+async function fetchAllPlaylistTracks(token, setLoadingMessage) {
   let allTracks = [];
   let playlistUrl = "https://api.spotify.com/v1/me/playlists?limit=50";
   const res = await fetch(playlistUrl, { headers: { Authorization: `Bearer ${token}` } });
   const data = await res.json();
 
-  const playlistFetches = data.items.map(async (playlist) => {
+  const playlists = data.items;
+  setLoadingMessage(`Scanning ${playlists.length} playlists...`);
+
+  const playlistFetches = playlists.map(async (playlist) => {
     try {
-      let trackUrl = `https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=100`;
-      let tracks = [];
-      while (trackUrl) {
-        const tRes = await fetch(trackUrl, { headers: { Authorization: `Bearer ${token}` } });
-        const tData = await tRes.json();
-        tracks = [...tracks, ...tData.items.filter(i => i && i.track)];
-        trackUrl = tData.next;
-      }
-      return tracks;
+      const tRes = await fetch(
+        `https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=100`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const tData = await tRes.json();
+      return tData.items.filter(i => i && i.track);
     } catch (e) {
       return [];
     }
