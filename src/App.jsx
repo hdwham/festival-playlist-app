@@ -44,10 +44,13 @@ async function fetchAllPlaylistTracks(token, userId) {
   const results = await Promise.all(
     myPlaylists.map(async (playlist) => {
       try {
-        const data = await fetchWithToken(
+        const res = await fetch(
           `https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=100`,
-          token
+          { headers: { Authorization: `Bearer ${token}` } }
         );
+        if (!res.ok) return [];
+        const data = await res.json();
+        if (!data.items) return [];
         return data.items.filter(i => i && i.track);
       } catch (e) {
         return [];
