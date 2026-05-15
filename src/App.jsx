@@ -21,9 +21,23 @@ function generateRandomString(length) {
   return result;
 }
 
+async function fetchAllSavedTracks(token) {
+  let tracks = [];
+  let url = "https://api.spotify.com/v1/me/tracks?limit=50";
+  while (url) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    tracks = [...tracks, ...data.items];
+    url = data.next;
+  }
+  return tracks;
+}
+
 function App() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
+  const [matches, setMatches] = useState({});
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -63,37 +77,103 @@ function App() {
       .then(data => setUser(data));
   }, [token]);
 
-  async function loginWithSpotify() {
-    const verifier = generateRandomString(64);
-    const challenge = await generateCodeChallenge(verifier);
-    localStorage.setItem("code_verifier", verifier);
-    const authUrl = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&code_challenge=${challenge}&code_challenge_method=S256`;
-    window.location.href = authUrl;
+  async function findMyArtists() {
+    setLoading(true);
+    const tracks = await fetchAllSavedTracks(token);
+    const artistMap = {};
+    tracks.forEach(item => {
+      item.track.artists.forEach(artist => {
+        const name = artist.name.toLowerCase();
+        if (!artistMap[name]) artistMap[name] = [];
+        artistMap[name].push(item.track.name);
+      });
+    });
+
+    const found = {};
+    lineup.forEach(artist => {
+      const key = artist.name.toLowerCase();
+      const variations = [
+        key,
+        key.replace(" and ", " & "),
+        key.replace(" & ", " and "),
+        key.split("(")[0].trim(),
+      ];
+      for (const v of variations) {
+        if (artistMap[v]) {
+          found[artist.name] = { songs: artistMap[v], day: artist.day, headliner: artist.headliner };
+          break;
+        }
+      }
+    });
+
+    setMatches(found);
+    setLoading(false);
   }
+
+  const matchCount = Object.keys(matches).length;
 
   return (
     <div style={{ fontFamily: "sans-serif", maxWidth: "800px", margin: "0 auto", padding: "40px 20px" }}>
-      <h1 style={{ color: "#1DB954" }}>BottleRock 2026</h1>
+      <h1 style={{ color: "#1DB954" }}>🎵 BottleRock 2026</h1>
       <p>Connect your Spotify to see which artists you already know!</p>
+
       {!token ? (
-        <button
-          onClick={loginWithSpotify}
+        <button onClick={async () => {
+          const verifier = generateRandomString(64);
+          const challenge = await generateCodeChallenge(verifier);
+          localStorage.setItem("code_verifier", verifier);
+          const authUrl = `https://accounts.spotify.com/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}&code_challenge=${challenge}&code_challenge_method=S256`;
+          window.location.href = authUrl;
+        }}
           style={{ background: "#1DB954", color: "white", border: "none", padding: "14px 28px", borderRadius: "25px", fontSize: "16px", cursor: "pointer" }}
         >
           Connect Spotify
         </button>
       ) : (
-        <div style={{ background: "#f0faf4", padding: "12px 20px", borderRadius: "12px", display: "inline-block" }}>
-          Connected as <strong>{user?.display_name}</strong>
+        <div>
+          <div style={{ background: "#f0faf4", padding: "12px 20px", borderRadius: "12px", display: "inline-block", marginBottom: "16px" }}>
+            ✅ Connected as <strong>{user?.display_name}</strong>
+          </div>
+          <br />
+          <button onClick={findMyArtists} disabled={loading}
+            style={{ background: "#1DB954", color: "white", border: "none", padding: "14px 28px", borderRadius: "25px", fontSize: "16px", cursor: "pointer", marginTop: "8px" }}
+          >
+            {loading ? "Scanning your library..." : "Find My Artists"}
+          </button>
         </div>
       )}
+
+      {matchCount > 0 && (
+        <div style={{ marginTop: "32px", background: "#f0faf4", padding: "20px", borderRadius: "12px" }}>
+          <h2 style={{ color: "#1DB954", marginTop: 0 }}>You know {matchCount} artists playing BottleRock!</h2>
+          {["Friday", "Saturday", "Sunday"].map(day => {
+            const dayMatches = Object.entries(matches).filter(([, v]) => v.day === day);
+            if (dayMatches.length === 0) return null;
+            return (
+              <div key={day}>
+                <h3 style={{ color: "#1DB954" }}>{day}</h3>
+                {dayMatches.map(([name, info]) => (
+                  <div key={name} style={{ background: "white", borderRadius: "8px", padding: "12px 16px", marginBottom: "8px" }}>
+                    <strong>{name}</strong> {info.headliner && "⭐"}
+                    <div style={{ fontSize: "13px", color: "#666", marginTop: "4px" }}>
+                      {info.songs.slice(0, 3).join(", ")}{info.songs.length > 3 ? ` +${info.songs.length - 3} more` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       <h2 style={{ marginTop: "40px" }}>Full Lineup</h2>
       {["Friday", "Saturday", "Sunday"].map(day => (
         <div key={day}>
           <h3 style={{ color: "#1DB954" }}>{day}</h3>
           {lineup.filter(a => a.day === day).map(artist => (
-            <div key={artist.name} style={{ padding: "8px 12px", margin: "4px 0", background: "#f5f5f5", borderRadius: "8px" }}>
+            <div key={artist.name} style={{ padding: "8px 12px", margin: "4px 0", background: matches[artist.name] ? "#f0faf4" : "#f5f5f5", borderRadius: "8px" }}>
               {artist.headliner ? <strong>{artist.name}</strong> : artist.name}
+              {matches[artist.name] && " ✅"}
             </div>
           ))}
         </div>
