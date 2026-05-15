@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import lineup from "./lineup.json";
 
 const CLIENT_ID = "40f2e99c46024d56a243727dbb07ffb4";
-const REDIRECT_URI = "https://localhost:5173/callback";
+const REDIRECT_URI = "https://festival-playlist-app-phi.vercel.app/callback";
 const SCOPES = "user-library-read user-top-read playlist-modify-public playlist-modify-private";
 
 async function generateCodeChallenge(codeVerifier) {
