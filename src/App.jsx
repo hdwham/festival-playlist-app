@@ -21,42 +21,40 @@ function generateRandomString(length) {
   return result;
 }
 
+async function fetchWithToken(url, token) {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  return res.json();
+}
+
 async function fetchAllSavedTracks(token) {
-  let tracks = [];
-  let url = "https://api.spotify.com/v1/me/tracks?limit=50";
-  while (url) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    tracks = [...tracks, ...data.items];
-    url = data.next;
-  }
-  return tracks;
+  const first = await fetchWithToken("https://api.spotify.com/v1/me/tracks?limit=50", token);
+  const total = first.total;
+  const offsets = [];
+  for (let i = 50; i < total; i += 50) offsets.push(i);
+  const pages = await Promise.all(
+    offsets.map(offset => fetchWithToken(`https://api.spotify.com/v1/me/tracks?limit=50&offset=${offset}`, token))
+  );
+  return [...first.items, ...pages.flatMap(p => p.items)];
 }
 
 async function fetchAllPlaylistTracks(token, userId) {
-  let allTracks = [];
-  let playlistUrl = "https://api.spotify.com/v1/me/playlists?limit=50";
-  const res = await fetch(playlistUrl, { headers: { Authorization: `Bearer ${token}` } });
-  const data = await res.json();
-
+  const data = await fetchWithToken("https://api.spotify.com/v1/me/playlists?limit=50", token);
   const myPlaylists = data.items.filter(p => p.owner.id === userId);
 
-  const playlistFetches = myPlaylists.map(async (playlist) => {
-    try {
-      const tRes = await fetch(
-        `https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=100`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const tData = await tRes.json();
-      return tData.items.filter(i => i && i.track);
-    } catch (e) {
-      return [];
-    }
-  });
-
-  const results = await Promise.all(playlistFetches);
-  results.forEach(tracks => { allTracks = [...allTracks, ...tracks]; });
-  return allTracks;
+  const results = await Promise.all(
+    myPlaylists.map(async (playlist) => {
+      try {
+        const data = await fetchWithToken(
+          `https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=100`,
+          token
+        );
+        return data.items.filter(i => i && i.track);
+      } catch (e) {
+        return [];
+      }
+    })
+  );
+  return results.flat();
 }
 
 function buildArtistMap(tracks) {
@@ -113,16 +111,11 @@ function App() {
 
   useEffect(() => {
     if (!token) return;
-    fetch("https://api.spotify.com/v1/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(res => res.json())
-      .then(data => setUser(data));
+    fetchWithToken("https://api.spotify.com/v1/me", token).then(data => setUser(data));
   }, [token]);
 
   async function findMyArtists() {
     setLoading(true);
-
     setLoadingMessage("Scanning your liked songs...");
     const likedTracks = await fetchAllSavedTracks(token);
 
@@ -130,8 +123,7 @@ function App() {
     const playlistTracks = await fetchAllPlaylistTracks(token, user.id);
 
     setLoadingMessage("Finding matches...");
-    const allTracks = [...likedTracks, ...playlistTracks];
-    const artistMap = buildArtistMap(allTracks);
+    const artistMap = buildArtistMap([...likedTracks, ...playlistTracks]);
 
     const found = {};
     lineup.forEach(artist => {
