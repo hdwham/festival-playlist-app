@@ -33,11 +33,48 @@ async function fetchAllSavedTracks(token) {
   return tracks;
 }
 
+async function fetchAllPlaylistTracks(token) {
+  let allTracks = [];
+  let playlistUrl = "https://api.spotify.com/v1/me/playlists?limit=50";
+  while (playlistUrl) {
+    const res = await fetch(playlistUrl, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json();
+    for (const playlist of data.items) {
+      let trackUrl = `https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=100`;
+      while (trackUrl) {
+        const tRes = await fetch(trackUrl, { headers: { Authorization: `Bearer ${token}` } });
+        const tData = await tRes.json();
+        allTracks = [...allTracks, ...tData.items.filter(i => i.track)];
+        trackUrl = tData.next;
+      }
+    }
+    playlistUrl = data.next;
+  }
+  return allTracks;
+}
+
+function buildArtistMap(tracks) {
+  const artistMap = {};
+  tracks.forEach(item => {
+    if (!item.track) return;
+    item.track.artists.forEach(artist => {
+      const name = artist.name.toLowerCase();
+      if (!artistMap[name]) artistMap[name] = { songs: [], uris: [] };
+      if (!artistMap[name].uris.includes(item.track.uri)) {
+        artistMap[name].songs.push(item.track.name);
+        artistMap[name].uris.push(item.track.uri);
+      }
+    });
+  });
+  return artistMap;
+}
+
 function App() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
   const [matches, setMatches] = useState({});
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -79,15 +116,16 @@ function App() {
 
   async function findMyArtists() {
     setLoading(true);
-    const tracks = await fetchAllSavedTracks(token);
-    const artistMap = {};
-    tracks.forEach(item => {
-      item.track.artists.forEach(artist => {
-        const name = artist.name.toLowerCase();
-        if (!artistMap[name]) artistMap[name] = [];
-        artistMap[name].push(item.track.name);
-      });
-    });
+
+    setLoadingMessage("Scanning your liked songs...");
+    const likedTracks = await fetchAllSavedTracks(token);
+
+    setLoadingMessage("Scanning your playlists...");
+    const playlistTracks = await fetchAllPlaylistTracks(token);
+
+    setLoadingMessage("Finding matches...");
+    const allTracks = [...likedTracks, ...playlistTracks];
+    const artistMap = buildArtistMap(allTracks);
 
     const found = {};
     lineup.forEach(artist => {
@@ -100,7 +138,12 @@ function App() {
       ];
       for (const v of variations) {
         if (artistMap[v]) {
-          found[artist.name] = { songs: artistMap[v], day: artist.day, headliner: artist.headliner };
+          found[artist.name] = {
+            songs: artistMap[v].songs,
+            uris: artistMap[v].uris,
+            day: artist.day,
+            headliner: artist.headliner
+          };
           break;
         }
       }
@@ -108,6 +151,7 @@ function App() {
 
     setMatches(found);
     setLoading(false);
+    setLoadingMessage("");
   }
 
   const matchCount = Object.keys(matches).length;
@@ -138,7 +182,7 @@ function App() {
           <button onClick={findMyArtists} disabled={loading}
             style={{ background: "#1DB954", color: "white", border: "none", padding: "14px 28px", borderRadius: "25px", fontSize: "16px", cursor: "pointer", marginTop: "8px" }}
           >
-            {loading ? "Scanning your library..." : "Find My Artists"}
+            {loading ? loadingMessage : "Find My Artists"}
           </button>
         </div>
       )}
