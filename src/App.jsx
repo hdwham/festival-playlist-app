@@ -36,20 +36,27 @@ async function fetchAllSavedTracks(token) {
 async function fetchAllPlaylistTracks(token) {
   let allTracks = [];
   let playlistUrl = "https://api.spotify.com/v1/me/playlists?limit=50";
-  while (playlistUrl) {
-    const res = await fetch(playlistUrl, { headers: { Authorization: `Bearer ${token}` } });
-    const data = await res.json();
-    for (const playlist of data.items) {
+  const res = await fetch(playlistUrl, { headers: { Authorization: `Bearer ${token}` } });
+  const data = await res.json();
+
+  const playlistFetches = data.items.map(async (playlist) => {
+    try {
       let trackUrl = `https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=100`;
+      let tracks = [];
       while (trackUrl) {
         const tRes = await fetch(trackUrl, { headers: { Authorization: `Bearer ${token}` } });
         const tData = await tRes.json();
-        allTracks = [...allTracks, ...tData.items.filter(i => i.track)];
+        tracks = [...tracks, ...tData.items.filter(i => i && i.track)];
         trackUrl = tData.next;
       }
+      return tracks;
+    } catch (e) {
+      return [];
     }
-    playlistUrl = data.next;
-  }
+  });
+
+  const results = await Promise.all(playlistFetches);
+  results.forEach(tracks => { allTracks = [...allTracks, ...tracks]; });
   return allTracks;
 }
 
