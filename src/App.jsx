@@ -33,16 +33,15 @@ async function fetchAllSavedTracks(token) {
   return tracks;
 }
 
-async function fetchAllPlaylistTracks(token, setLoadingMessage) {
+async function fetchAllPlaylistTracks(token, userId) {
   let allTracks = [];
   let playlistUrl = "https://api.spotify.com/v1/me/playlists?limit=50";
   const res = await fetch(playlistUrl, { headers: { Authorization: `Bearer ${token}` } });
   const data = await res.json();
 
-  const playlists = data.items;
-  setLoadingMessage(`Scanning ${playlists.length} playlists...`);
+  const myPlaylists = data.items.filter(p => p.owner.id === userId);
 
-  const playlistFetches = playlists.map(async (playlist) => {
+  const playlistFetches = myPlaylists.map(async (playlist) => {
     try {
       const tRes = await fetch(
         `https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=100`,
@@ -128,7 +127,7 @@ function App() {
     const likedTracks = await fetchAllSavedTracks(token);
 
     setLoadingMessage("Scanning your playlists...");
-    const playlistTracks = await fetchAllPlaylistTracks(token);
+    const playlistTracks = await fetchAllPlaylistTracks(token, user.id);
 
     setLoadingMessage("Finding matches...");
     const allTracks = [...likedTracks, ...playlistTracks];
