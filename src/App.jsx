@@ -27,17 +27,6 @@ async function fetchWithToken(url, token) {
 }
 
 async function fetchAllSavedTracks(token) {
-  const first = await fetchWithToken("https://api.spotify.com/v1/me/tracks?limit=50", token);
-  const total = first.total;
-  const offsets = [];
-  for (let i = 50; i < total; i += 50) offsets.push(i);
-  const pages = await Promise.all(
-    offsets.map(offset => fetchWithToken(`https://api.spotify.com/v1/me/tracks?limit=50&offset=${offset}`, token))
-  );
-  return [...first.items, ...pages.flatMap(p => p.items)];
-}
-
-async function fetchAllSavedTracks(token) {
   try {
     const first = await fetchWithToken("https://api.spotify.com/v1/me/tracks?limit=50", token);
     if (!first || !first.items) return [];
@@ -45,11 +34,42 @@ async function fetchAllSavedTracks(token) {
     const offsets = [];
     for (let i = 50; i < total; i += 50) offsets.push(i);
     const pages = await Promise.all(
-      offsets.map(offset => fetchWithToken(`https://api.spotify.com/v1/me/tracks?limit=50&offset=${offset}`, token).catch(() => ({ items: [] })))
+      offsets.map(offset =>
+        fetchWithToken(`https://api.spotify.com/v1/me/tracks?limit=50&offset=${offset}`, token)
+          .catch(() => ({ items: [] }))
+      )
     );
     return [...first.items, ...pages.flatMap(p => p.items || [])];
   } catch (e) {
     console.error("Error fetching liked songs:", e);
+    return [];
+  }
+}
+
+async function fetchAllPlaylistTracks(token, userId) {
+  try {
+    const data = await fetchWithToken("https://api.spotify.com/v1/me/playlists?limit=50", token);
+    if (!data || !data.items) return [];
+    const myPlaylists = data.items.filter(p => p.owner.id === userId);
+    const results = await Promise.all(
+      myPlaylists.map(async (playlist) => {
+        try {
+          const res = await fetch(
+            `https://api.spotify.com/v1/playlists/${playlist.id}/tracks?limit=100`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (!res.ok) return [];
+          const data = await res.json();
+          if (!data.items) return [];
+          return data.items.filter(i => i && i.track);
+        } catch (e) {
+          return [];
+        }
+      })
+    );
+    return results.flat();
+  } catch (e) {
+    console.error("Error fetching playlists:", e);
     return [];
   }
 }
