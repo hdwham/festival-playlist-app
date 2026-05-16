@@ -174,7 +174,7 @@ function App() {
     setPlaylistLoading(true);
     const allUris = Object.values(matches).flatMap(m => m.uris);
 
-    const createRes = await fetch(`https://api.spotify.com/v1/users/${user.id}/playlists`, {
+    const createRes = await fetch(`https://api.spotify.com/v1/me/playlists`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
