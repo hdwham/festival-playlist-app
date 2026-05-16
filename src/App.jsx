@@ -41,7 +41,6 @@ async function fetchAllSavedTracks(token) {
     );
     return [...first.items, ...pages.flatMap(p => p.items || [])];
   } catch (e) {
-    console.error("Error fetching liked songs:", e);
     return [];
   }
 }
@@ -69,7 +68,6 @@ async function fetchAllPlaylistTracks(token, userId) {
     );
     return results.flat();
   } catch (e) {
-    console.error("Error fetching playlists:", e);
     return [];
   }
 }
@@ -96,6 +94,8 @@ function App() {
   const [matches, setMatches] = useState({});
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
+  const [playlistUrl, setPlaylistUrl] = useState(null);
+  const [playlistLoading, setPlaylistLoading] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -133,6 +133,7 @@ function App() {
 
   async function findMyArtists() {
     setLoading(true);
+    setPlaylistUrl(null);
     setLoadingMessage("Scanning your liked songs...");
     const likedTracks = await fetchAllSavedTracks(token);
 
@@ -169,7 +170,45 @@ function App() {
     setLoadingMessage("");
   }
 
+  async function buildPlaylist() {
+    setPlaylistLoading(true);
+    const allUris = Object.values(matches).flatMap(m => m.uris);
+
+    const createRes = await fetch(`https://api.spotify.com/v1/users/${user.id}/playlists`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name: "My BottleRock 2026",
+        description: "Songs from my library by artists playing BottleRock 2026",
+        public: false
+      })
+    });
+    const playlist = await createRes.json();
+
+    const chunks = [];
+    for (let i = 0; i < allUris.length; i += 100) {
+      chunks.push(allUris.slice(i, i + 100));
+    }
+    for (const chunk of chunks) {
+      await fetch(`https://api.spotify.com/v1/playlists/${playlist.id}/tracks`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ uris: chunk })
+      });
+    }
+
+    setPlaylistUrl(playlist.external_urls.spotify);
+    setPlaylistLoading(false);
+  }
+
   const matchCount = Object.keys(matches).length;
+  const totalSongs = Object.values(matches).reduce((acc, m) => acc + m.songs.length, 0);
 
   return (
     <div style={{ fontFamily: "sans-serif", maxWidth: "800px", margin: "0 auto", padding: "40px 20px" }}>
@@ -204,7 +243,24 @@ function App() {
 
       {matchCount > 0 && (
         <div style={{ marginTop: "32px", background: "#f0faf4", padding: "20px", borderRadius: "12px" }}>
-          <h2 style={{ color: "#1DB954", marginTop: 0 }}>You know {matchCount} artists playing BottleRock!</h2>
+          <h2 style={{ color: "#1DB954", marginTop: 0 }}>
+            You know {matchCount} artists and {totalSongs} songs playing BottleRock!
+          </h2>
+
+          {!playlistUrl ? (
+            <button onClick={buildPlaylist} disabled={playlistLoading}
+              style={{ background: "#1DB954", color: "white", border: "none", padding: "12px 24px", borderRadius: "25px", fontSize: "15px", cursor: "pointer", marginBottom: "20px" }}
+            >
+              {playlistLoading ? "Building playlist..." : "🎵 Build My BottleRock 2026 Playlist"}
+            </button>
+          ) : (
+            <a href={playlistUrl} target="_blank" rel="noreferrer"
+              style={{ display: "inline-block", background: "#1DB954", color: "white", padding: "12px 24px", borderRadius: "25px", fontSize: "15px", textDecoration: "none", marginBottom: "20px" }}
+            >
+              ✅ Open My BottleRock 2026 Playlist in Spotify →
+            </a>
+          )}
+
           {["Friday", "Saturday", "Sunday"].map(day => {
             const dayMatches = Object.entries(matches).filter(([, v]) => v.day === day);
             if (dayMatches.length === 0) return null;
